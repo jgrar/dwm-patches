@@ -1,18 +1,18 @@
 diff --git a/runorraise.c b/runorraise.c
 new file mode 100644
-index 0000000..5494aaa
+index 0000000..87368d8
 --- /dev/null
 +++ b/runorraise.c
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,59 @@
 +typedef struct {
 +	char *class;
 +	char *name;
-+	char *spawncmd[];
-+} ClassHintedCmd;
++	char **spawn;
++} RoR;
 +
 +void
 +runorraise(const Arg *_arg) {
-+	ClassHintedCmd *arg = *(ClassHintedCmd **)_arg;
++	RoR *arg = *(RoR **)_arg;
 +	Arg a = { .ui = ~0 };
 +	Monitor *mon;
 +	Client *c;
@@ -27,21 +27,29 @@ index 0000000..5494aaa
 +		for (c = mon->clients; c; c = c->next) {
 +			XGetClassHint(dpy, c->win, &hint);
 +
-+			if (arg->class && arg->name
-+				&& strcmp(arg->class, hint.res_class) != 0
-+				|| strcmp(arg->name, hint.res_name) != 0) {
-+				continue;
-+
-+			} else {
-+
-+				} if (arg->class && hint.res_class
-+					&& strcmp(arg->class, hint.res_class) != 0) {
++			/* matching both */
++			if (arg->class && arg->name) {
++				if (!hint.res_class || !hint.res_name)
 +					continue;
 +
-+				if (arg->name && hint.res_name
-+					&& strcmp(arg->name, hint.res_name) != 0) {
++				if (strcmp(arg->class, hint.res_class) != 0 || strcmp(arg->name, hint.res_name) != 0)
 +					continue;
-+				}
++
++			/* matching class only */
++			} else if (arg->class && !arg->name) {
++
++				if (!hint.res_class)
++					continue;
++
++				if (strcmp(arg->class, hint.res_class) != 0)
++					continue;
++			/* matching name only */
++			} else if (!arg->class && arg->name) {
++				if (!hint.res_name)
++					continue;
++
++				if (strcmp(arg->name, hint.res_name) != 0)
++					continue;
 +			}
 +
 +			a.ui = c->tags;
@@ -53,6 +61,5 @@ index 0000000..5494aaa
 +		}
 +	}
 +	/* Client not found: spawn it */
-+	spawn(&(Arg){.v = arg->spawncmd});
++	spawn(&(Arg){.v = arg->spawn});
 +}
-+
