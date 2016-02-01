@@ -1,5 +1,5 @@
 diff --git a/drw.c b/drw.c
-index f49200b..f829741 100644
+index f49200b..e336b05 100644
 --- a/drw.c
 +++ b/drw.c
 @@ -206,6 +206,26 @@ drw_setscheme(Drw *drw, ClrScheme *scheme)
@@ -18,7 +18,7 @@ index f49200b..f829741 100644
 +			/* we found a color code
 +			 * drw_text counted it as a normal character and added one character's width
 +			 * we aren't going to render this character, so we remove one character's width */
-+			w -= curfont->xfont->max_advance_width;
++			w -= drw_font_getexts_width(curfont, "\x01", 1);
 +
 +		}
 +	}
