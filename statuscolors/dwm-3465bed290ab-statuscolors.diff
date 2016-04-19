@@ -1,5 +1,5 @@
 diff --git a/drw.c b/drw.c
-index f49200b..e336b05 100644
+index f49200b..b049dd8 100644
 --- a/drw.c
 +++ b/drw.c
 @@ -206,6 +206,26 @@ drw_setscheme(Drw *drw, ClrScheme *scheme)
@@ -61,7 +61,7 @@ index f49200b..e336b05 100644
  			for (i = 0; i < drw->fontcount; i++) {
  				charexists = charexists || XftCharExists(drw->dpy, drw->fonts[i]->xfont, utf8codepoint);
  				if (charexists) {
-@@ -304,6 +332,10 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, const char *tex
+@@ -304,6 +332,13 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, const char *tex
  		} else if (nextfont) {
  			charexists = 0;
  			curfont = nextfont;
@@ -69,6 +69,9 @@ index f49200b..e336b05 100644
 +			drw_setscheme(drw, &scheme[*text-1]);
 +			text++;
 +			colorScheme = 0;
++			XSetForeground(drw->dpy, drw->gc, invert ?
++				       drw->scheme->fg->pix : drw->scheme->bg->pix);
++			XFillRectangle(drw->dpy, drw->drawable, drw->gc, x + drw_font_getexts_width(curfont, "\x01", 1), y, w, h);
  		} else {
  			/* Regardless of whether or not a fallback font is found, the
  			 * character must be drawn.
