@@ -1,0 +1,39 @@
+diff --git a/dwm.c b/dwm.c
+index d27cb67..972e6fa 100644
+--- a/dwm.c
++++ b/dwm.c
+@@ -52,8 +52,8 @@
+ #define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]))
+ #define LENGTH(X)               (sizeof X / sizeof X[0])
+ #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
+-#define WIDTH(X)                ((X)->w + 2 * (X)->bw)
+-#define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
++#define WIDTH(X)                ((X)->w + 2 * (X)->bw + gappx)
++#define HEIGHT(X)               ((X)->h + 2 * (X)->bw + gappx)
+ #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
+ #define TEXTW(X)                (drw_fontset_getwidth(drw, (X)) + lrpad)
+ #define ColBorder               2
+@@ -1281,11 +1281,19 @@ void
+ resizeclient(Client *c, int x, int y, int w, int h)
+ {
+ 	XWindowChanges wc;
++	unsigned int gapoffset, gapincr;
+ 
+-	c->oldx = c->x; c->x = wc.x = x;
+-	c->oldy = c->y; c->y = wc.y = y;
+-	c->oldw = c->w; c->w = wc.width = w;
+-	c->oldh = c->h; c->h = wc.height = h;
++	if (c->isfloating || selmon->lt[selmon->sellt]->arrange == NULL) {
++		gapoffset = gapincr = 0;
++	} else {
++			gapoffset = gappx;
++			gapincr = 2 * gappx;
++	}
++
++	c->oldx = c->x; c->x = wc.x = x + gapoffset;
++	c->oldy = c->y; c->y = wc.y = y + gapoffset;
++	c->oldw = c->w; c->w = wc.width = w - gapincr;
++	c->oldh = c->h; c->h = wc.height = h - gapincr;
+ 	wc.border_width = c->bw;
+ 	XConfigureWindow(dpy, c->win, CWX|CWY|CWWidth|CWHeight|CWBorderWidth, &wc);
+ 	configure(c);
