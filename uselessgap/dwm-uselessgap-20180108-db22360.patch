@@ -1,0 +1,64 @@
+From 10cfd028fd3721fbb36721d5854c22289d2575e1 Mon Sep 17 00:00:00 2001
+From: Jonathen Russell <jgr006@gmail.com>
+Date: Mon, 8 Jan 2018 12:28:11 +1000
+Subject: [PATCH] Apply useless gap patch
+
+---
+ config.def.h |  1 +
+ dwm.c        | 20 ++++++++++++++------
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/config.def.h b/config.def.h
+index a9ac303..44d68cf 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -2,6 +2,7 @@
+ 
+ /* appearance */
+ static const unsigned int borderpx  = 1;        /* border pixel of windows */
++static const unsigned int gappx     = 16;       /* border gap pixel of windows */
+ static const unsigned int snap      = 32;       /* snap pixel */
+ static const int showbar            = 1;        /* 0 means no bar */
+ static const int topbar             = 1;        /* 0 means bottom bar */
+diff --git a/dwm.c b/dwm.c
+index ec6a27c..950fcb2 100644
+--- a/dwm.c
++++ b/dwm.c
+@@ -52,8 +52,8 @@
+ #define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]))
+ #define LENGTH(X)               (sizeof X / sizeof X[0])
+ #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
+-#define WIDTH(X)                ((X)->w + 2 * (X)->bw)
+-#define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
++#define WIDTH(X)                ((X)->w + 2 * (X)->bw + gappx)
++#define HEIGHT(X)               ((X)->h + 2 * (X)->bw + gappx)
+ #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
+ #define TEXTW(X)                (drw_fontset_getwidth(drw, (X)) + lrpad)
+ #define ColBorder               2
+@@ -1277,11 +1277,19 @@ void
+ resizeclient(Client *c, int x, int y, int w, int h)
+ {
+ 	XWindowChanges wc;
++	unsigned int gapoffset, gapincr;
+ 
+-	c->oldx = c->x; c->x = wc.x = x;
+-	c->oldy = c->y; c->y = wc.y = y;
+-	c->oldw = c->w; c->w = wc.width = w;
+-	c->oldh = c->h; c->h = wc.height = h;
++	if (c->isfloating || selmon->lt[selmon->sellt]->arrange == NULL) {
++		gapoffset = gapincr = 0;
++	} else {
++		gapoffset = gappx;
++		gapincr = 2 * gappx;
++	}
++
++	c->oldx = c->x; c->x = wc.x = x + gapoffset;
++	c->oldy = c->y; c->y = wc.y = y + gapoffset;
++	c->oldw = c->w; c->w = wc.width = w - gapincr;
++	c->oldh = c->h; c->h = wc.height = h - gapincr;
+ 	wc.border_width = c->bw;
+ 	XConfigureWindow(dpy, c->win, CWX|CWY|CWWidth|CWHeight|CWBorderWidth, &wc);
+ 	configure(c);
+-- 
+2.15.1
+
