@@ -1,0 +1,292 @@
+From 2fac7a122c245a6cd3ab5c97938dd82ea2547749 Mon Sep 17 00:00:00 2001
+From: Jonathen Russell <jgr006@gmail.com>
+Date: Mon, 8 Jan 2018 12:12:57 +1000
+Subject: [PATCH] Apply alpha patch
+
+---
+ config.def.h |  1 +
+ config.mk    |  2 +-
+ drw.c        | 53 +++++++++++++++++++++++++++++++++++++++-------------
+ drw.h        | 11 ++++++++---
+ dwm.c        | 61 ++++++++++++++++++++++++++++++++++++++++++++++++++++++------
+ 5 files changed, 105 insertions(+), 23 deletions(-)
+
+diff --git a/config.def.h b/config.def.h
+index a9ac303..4cec6ad 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -1,6 +1,7 @@
+ /* See LICENSE file for copyright and license details. */
+ 
+ /* appearance */
++static const unsigned short alpha   = 0x90;      /* background color alpha */
+ static const unsigned int borderpx  = 1;        /* border pixel of windows */
+ static const unsigned int snap      = 32;       /* snap pixel */
+ static const int showbar            = 1;        /* 0 means no bar */
+diff --git a/config.mk b/config.mk
+index 80dc936..2c62e89 100644
+--- a/config.mk
++++ b/config.mk
+@@ -22,7 +22,7 @@ FREETYPEINC = /usr/include/freetype2
+ 
+ # includes and libs
+ INCS = -I${X11INC} -I${FREETYPEINC}
+-LIBS = -L${X11LIB} -lX11 ${XINERAMALIBS} ${FREETYPELIBS}
++LIBS = -L${X11LIB} -lX11 ${XINERAMALIBS} ${FREETYPELIBS} -lXrender
+ 
+ # flags
+ CPPFLAGS = -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_POSIX_C_SOURCE=2 -DVERSION=\"${VERSION}\" ${XINERAMAFLAGS}
+diff --git a/drw.c b/drw.c
+index c638323..dca8f9e 100644
+--- a/drw.c
++++ b/drw.c
+@@ -61,7 +61,8 @@ utf8decode(const char *c, long *u, size_t clen)
+ }
+ 
+ Drw *
+-drw_create(Display *dpy, int screen, Window root, unsigned int w, unsigned int h)
++drw_create(Display *dpy, int screen, Window root, unsigned int w, unsigned int h,
++	Visual *visual, unsigned int depth, Colormap cmap)
+ {
+ 	Drw *drw = ecalloc(1, sizeof(Drw));
+ 
+@@ -70,8 +71,11 @@ drw_create(Display *dpy, int screen, Window root, unsigned int w, unsigned int h
+ 	drw->root = root;
+ 	drw->w = w;
+ 	drw->h = h;
+-	drw->drawable = XCreatePixmap(dpy, root, w, h, DefaultDepth(dpy, screen));
+-	drw->gc = XCreateGC(dpy, root, 0, NULL);
++	drw->visual = visual;
++	drw->depth = depth;
++	drw->cmap = cmap;
++	drw->drawable = XCreatePixmap(dpy, root, w, h, depth);
++	drw->gc = XCreateGC(dpy, drw->drawable, 0, NULL);
+ 	XSetLineAttributes(dpy, drw->gc, 1, LineSolid, CapButt, JoinMiter);
+ 
+ 	return drw;
+@@ -87,7 +91,7 @@ drw_resize(Drw *drw, unsigned int w, unsigned int h)
+ 	drw->h = h;
+ 	if (drw->drawable)
+ 		XFreePixmap(drw->dpy, drw->drawable);
+-	drw->drawable = XCreatePixmap(drw->dpy, drw->root, w, h, DefaultDepth(drw->dpy, drw->screen));
++	drw->drawable = XCreatePixmap(drw->dpy, drw->root, w, h, drw->depth);
+ }
+ 
+ void
+@@ -180,21 +184,43 @@ drw_fontset_free(Fnt *font)
+ }
+ 
+ void
+-drw_clr_create(Drw *drw, Clr *dest, const char *clrname)
++drw_clr_create(Drw *drw, Clr *dest, const char *clrname, unsigned short alpha)
+ {
+ 	if (!drw || !dest || !clrname)
+ 		return;
+ 
+-	if (!XftColorAllocName(drw->dpy, DefaultVisual(drw->dpy, drw->screen),
+-	                       DefaultColormap(drw->dpy, drw->screen),
+-	                       clrname, dest))
++	if (alpha < OPAQUE) {
++		XColor c;
++		XRenderPictFormat *fmt;
++
++		if ((drw->visual->class == TrueColor)
++			&& (fmt = XRenderFindVisualFormat(drw->dpy, drw->visual))) {
++
++			if (!XParseColor(drw->dpy, drw->cmap, clrname, &c))
++				die("error, cannot parse color '%s'", clrname);
++			else {
++				dest->color.red   = c.red   * alpha / 0xffff;
++				dest->color.green = c.green * alpha / 0xffff;
++				dest->color.blue  = c.blue  * alpha / 0xffff;
++				dest->color.alpha = alpha;
++
++				dest->pixel =
++					  ((dest->color.red   * (fmt->direct.redMask   + 1) >> 8) << fmt->direct.red  )
++					| ((dest->color.green * (fmt->direct.greenMask + 1) >> 8) << fmt->direct.green)
++					| ((dest->color.blue  * (fmt->direct.blueMask  + 1) >> 8) << fmt->direct.blue )
++					| ((dest->color.alpha * (fmt->direct.alphaMask + 1) >> 8) << fmt->direct.alpha);
++				return;
++			}
++		}
++	}
++	if (!XftColorAllocName(drw->dpy, drw->visual, drw->cmap, clrname, dest))
+ 		die("error, cannot allocate color '%s'", clrname);
+ }
+ 
+ /* Wrapper to create color schemes. The caller has to call free(3) on the
+  * returned color scheme when done using it. */
+ Clr *
+-drw_scm_create(Drw *drw, const char *clrnames[], size_t clrcount)
++drw_scm_create(Drw *drw, const char *clrnames[], size_t clrcount, unsigned short alpha)
+ {
+ 	size_t i;
+ 	Clr *ret;
+@@ -204,7 +230,9 @@ drw_scm_create(Drw *drw, const char *clrnames[], size_t clrcount)
+ 		return NULL;
+ 
+ 	for (i = 0; i < clrcount; i++)
+-		drw_clr_create(drw, &ret[i], clrnames[i]);
++		drw_clr_create(drw, &ret[i], clrnames[i],
++			(i == ColBg)? alpha: OPAQUE);
++
+ 	return ret;
+ }
+ 
+@@ -260,9 +288,8 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
+ 	} else {
+ 		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
+ 		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
+-		d = XftDrawCreate(drw->dpy, drw->drawable,
+-		                  DefaultVisual(drw->dpy, drw->screen),
+-		                  DefaultColormap(drw->dpy, drw->screen));
++		d = XftDrawCreate(drw->dpy, drw->drawable, drw->visual,
++			drw->cmap);
+ 		x += lpad;
+ 		w -= lpad;
+ 	}
+diff --git a/drw.h b/drw.h
+index 4c67419..bb8d85d 100644
+--- a/drw.h
++++ b/drw.h
+@@ -12,6 +12,7 @@ typedef struct Fnt {
+ 	struct Fnt *next;
+ } Fnt;
+ 
++#define OPAQUE 0xff
+ enum { ColFg, ColBg }; /* Clr scheme index */
+ typedef XftColor Clr;
+ 
+@@ -20,6 +21,9 @@ typedef struct {
+ 	Display *dpy;
+ 	int screen;
+ 	Window root;
++	Visual *visual;
++	unsigned int depth;
++	Colormap cmap;
+ 	Drawable drawable;
+ 	GC gc;
+ 	Clr *scheme;
+@@ -27,7 +31,8 @@ typedef struct {
+ } Drw;
+ 
+ /* Drawable abstraction */
+-Drw *drw_create(Display *dpy, int screen, Window win, unsigned int w, unsigned int h);
++Drw *drw_create(Display *dpy, int screen, Window win, unsigned int w, unsigned int h,
++	Visual *visual, unsigned int depth, Colormap cmap);
+ void drw_resize(Drw *drw, unsigned int w, unsigned int h);
+ void drw_free(Drw *drw);
+ 
+@@ -38,8 +43,8 @@ unsigned int drw_fontset_getwidth(Drw *drw, const char *text);
+ void drw_font_getexts(Fnt *font, const char *text, unsigned int len, unsigned int *w, unsigned int *h);
+ 
+ /* Colorscheme abstraction */
+-void drw_clr_create(Drw *drw, Clr *dest, const char *clrname);
+-Clr *drw_scm_create(Drw *drw, const char *clrnames[], size_t clrcount);
++void drw_clr_create(Drw *drw, Clr *dest, const char *clrname, unsigned short alpha);
++Clr *drw_scm_create(Drw *drw, const char *clrnames[], size_t clrcount, unsigned short alpha);
+ 
+ /* Cursor abstraction */
+ Cur *drw_cur_create(Drw *drw, int shape);
+diff --git a/dwm.c b/dwm.c
+index ec6a27c..d316091 100644
+--- a/dwm.c
++++ b/dwm.c
+@@ -269,6 +269,10 @@ static Drw *drw;
+ static Monitor *mons, *selmon;
+ static Window root, wmcheckwin;
+ 
++static unsigned int depth;
++static Visual *visual;
++static Colormap cmap;
++
+ /* configuration, allows nested code to access above variables */
+ #include "config.h"
+ 
+@@ -1542,7 +1546,52 @@ setup(void)
+ 	sw = DisplayWidth(dpy, screen);
+ 	sh = DisplayHeight(dpy, screen);
+ 	root = RootWindow(dpy, screen);
+-	drw = drw_create(dpy, screen, root, sw, sh);
++
++	if (alpha < OPAQUE) {
++		XVisualInfo *vis;
++		XRenderPictFormat *fmt;
++		int nvi;
++		int i;
++
++		depth = 32;
++		XVisualInfo tpl = {
++			.screen = screen,
++			.depth  = depth,
++			.class  = TrueColor
++		};
++
++		long masks = VisualScreenMask | VisualDepthMask | VisualClassMask;
++		vis = XGetVisualInfo(dpy, masks, &tpl, &nvi);
++
++		visual = NULL;
++
++		for (i = 0; i < nvi; i++) {
++			fmt = XRenderFindVisualFormat(dpy, vis[i].visual);
++			if (fmt->type == PictTypeDirect
++				&& fmt->direct.alphaMask) {
++				visual = vis[i].visual;
++				depth = vis[i].depth;
++				cmap = XCreateColormap(dpy, root, visual, None);
++				break;
++			}
++		}
++
++		XFree(vis);
++		if (!visual)
++			fprintf(stderr, "Couldn't find ARGB visual.\n");
++	}
++
++	if (!depth)
++		depth = DefaultDepth(dpy, screen);
++
++	if (!visual)
++		visual = DefaultVisual(dpy, screen);
++
++	if (!cmap)
++		cmap = DefaultColormap(dpy, screen);
++
++	drw = drw_create(dpy, screen, root, sw, sh, visual, depth, cmap);
++
+ 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
+ 		die("no fonts could be loaded.");
+ 	lrpad = drw->fonts->h;
+@@ -1570,7 +1619,7 @@ setup(void)
+ 	/* init appearance */
+ 	scheme = ecalloc(LENGTH(colors), sizeof(Clr *));
+ 	for (i = 0; i < LENGTH(colors); i++)
+-		scheme[i] = drw_scm_create(drw, colors[i], 3);
++		scheme[i] = drw_scm_create(drw, colors[i], 3, alpha);
+ 	/* init bars */
+ 	updatebars();
+ 	updatestatus();
+@@ -1805,16 +1854,16 @@ updatebars(void)
+ 	Monitor *m;
+ 	XSetWindowAttributes wa = {
+ 		.override_redirect = True,
+-		.background_pixmap = ParentRelative,
++		.colormap = cmap,
+ 		.event_mask = ButtonPressMask|ExposureMask
+ 	};
+ 	XClassHint ch = {"dwm", "dwm"};
+ 	for (m = mons; m; m = m->next) {
+ 		if (m->barwin)
+ 			continue;
+-		m->barwin = XCreateWindow(dpy, root, m->wx, m->by, m->ww, bh, 0, DefaultDepth(dpy, screen),
+-				CopyFromParent, DefaultVisual(dpy, screen),
+-				CWOverrideRedirect|CWBackPixmap|CWEventMask, &wa);
++		m->barwin = XCreateWindow(dpy, root, m->wx, m->by, m->ww, bh, 0, drw->depth,
++				CopyFromParent, drw->visual,
++				CWOverrideRedirect|CWBackPixel|CWBorderPixel|CWColormap|CWEventMask, &wa);
+ 		XDefineCursor(dpy, m->barwin, cursor[CurNormal]->cursor);
+ 		XMapRaised(dpy, m->barwin);
+ 		XSetClassHint(dpy, m->barwin, &ch);
+-- 
+2.15.1
+
